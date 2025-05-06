@@ -91,9 +91,50 @@ std::set<std::string> boggle(const std::set<std::string>& dict, const std::set<s
 	return result;
 }
 
-bool boggleHelper(const std::set<std::string>& dict, const std::set<std::string>& prefix, const std::vector<std::vector<char> >& board, 
-								   std::string word, std::set<std::string>& result, unsigned int r, unsigned int c, int dr, int dc)
+bool boggleHelper(const std::set<std::string>& dict,
+                  const std::set<std::string>& prefix,
+                  const std::vector<std::vector<char>>& board,
+                  std::string word,
+                  std::set<std::string>& result,
+                  unsigned int r,
+                  unsigned int c,
+                  int dr,
+                  int dc)
 {
-//add your solution here!
+    unsigned int n = board.size();
+    // 1) out of bounds?
+    if (r >= n || c >= n) return false;
 
+    // 2) append current letter (board and dict are both upper‐case)
+    word.push_back(board[r][c]);
+
+    // 3) check if this is a dict word, or at least a prefix of one
+    bool isWord   = (dict.find(word)   != dict.end());
+    bool isPrefix = (prefix.find(word) != prefix.end());
+    // if neither, we can’t go further and this path yields nothing
+    if (!isWord && !isPrefix) {
+        return false;
+    }
+
+    // 4) if it is a prefix, try to go deeper
+    bool foundLonger = false;
+    if (isPrefix) {
+        unsigned int nr = r + dr, nc = c + dc;
+        if (nr < n && nc < n) {
+            foundLonger = boggleHelper(
+                dict, prefix, board,
+                word, result,
+                nr, nc, dr, dc
+            );
+        }
+    }
+
+    // 5) if this EXACT word is in the dictionary, and we did *not*
+    //    already insert a strictly longer one down below, insert it now
+    if (isWord && !foundLonger) {
+        result.insert(word);
+    }
+
+    // 6) return true if *any* word (this one or deeper) was found
+    return isWord || foundLonger;
 }
