@@ -1,48 +1,119 @@
 #include "ht.h"
 #include "hash.h"
-#include <unordered_map>
 #include <iostream>
-#include <utility>
 #include <string>
-#include <sstream>
-#include <functional>
-using namespace std;
-int main()
-{
-    DoubleHashProber<std::string, MyStringHash > dh;
-    HashTable<
-        std::string, 
-        int, 
-        DoubleHashProber<std::string, MyStringHash >, 
-        std::hash<std::string>, 
-        std::equal_to<std::string> > ht(0.7, dh);
+#include <stdexcept>
+#include <exception>
 
-    // This is just arbitrary code. Change it to test whatever you like about your 
-    // hash table implementation.
-    for(size_t i = 0; i < 10; i++){
-        std::stringstream ss;
-        ss << "hi" << i;
-        ht.insert({ss.str(), i});
+using namespace std;
+
+// Simple assert with exception on failure
+void assert_true(bool cond, const string& msg = "") {
+    if (!cond) throw runtime_error(msg);
+}
+
+#define TEST_CASE(name) \
+    cout << "[TEST] " << name << " ... "; \
+    try {
+
+#define END_TEST() \
+        cout << "PASS" << endl; \
+    } catch (const exception& e) { \
+        cout << "FAIL (" << e.what() << ")" << endl; \
     }
-    if( ht.find("hi1") != nullptr ){
-        cout << "Found hi1" << endl;
-        ht["hi1"] += 1;
-        cout << "Incremented hi1's value to: " << ht["hi1"] << endl;
+
+// Test 1: Basic insert, find, size
+void testBasicInsertFind() {
+    HashTable<string,int> ht(0.5, LinearProber<string>());
+    ht.insert({"a",1});
+    ht.insert({"b",2});
+    assert_true(ht.size() == 2, "size should be 2");
+    auto p = ht.find("a");
+    assert_true(p && p->second == 1, "a should be found with value 1");
+    assert_true(ht.find("c") == nullptr, "c should not be found");
+}
+
+// Test 2: operator[] and at(), exception
+void testAtAndOperatorBrackets() {
+    HashTable<string,int> ht(0.5, LinearProber<string>());
+    ht.insert({"x",10});
+    assert_true(ht.at("x") == 10, "at(x) must be 10");
+    ht["x"] = 42;
+    assert_true(ht.at("x") == 42, "x should now be 42");
+    // operator[] creates if missing
+    ht["y"] = 7;
+    assert_true(ht.at("y") == 7, "y should be 7");
+    // at() on missing throws
+    bool threw = false;
+    try {
+        ht.at("z");
+    } catch (const out_of_range&) {
+        threw = true;
     }
-    if( ht.find("doesnotexist") == nullptr ){
-        cout << "Did not find: doesnotexist" << endl;
+    assert_true(threw, "at(z) must throw out_of_range");
+}
+
+// Test 3: remove and size adjustment
+void testRemove() {
+    HashTable<string,int> ht(0.5, LinearProber<string>());
+    ht.insert({"r1",1});
+    ht.insert({"r2",2});
+    assert_true(ht.size() == 2);
+    ht.remove("r1");
+    assert_true(ht.size() == 1, "size should drop to 1");
+    assert_true(ht.find("r1") == nullptr, "r1 must be gone");
+    // removing non-existent key
+    ht.remove("notthere");
+    assert_true(ht.size() == 1, "size unchanged when removing missing");
+}
+
+// Test 4: resizing and rehashing preserves data
+void testResizeRehash() {
+    // small threshold to force resize quickly
+    HashTable<int,int,LinearProber<int>> ht(0.3, LinearProber<int>());
+    int initialCap = 11;
+    for (int i = 0; i < 5; i++) {
+        ht.insert({i, i*10});
     }
-    cout << "HT size: " << ht.size() << endl;
-    ht.remove("hi7");
-    ht.remove("hi9");
-    cout << "HT size: " << ht.size() << endl;
-    if( ht.find("hi9") != nullptr ){
-        cout << "Found hi9" << endl;
+    // 5/11 = .45 > .3 so should have resized at insert 4 or 5
+    for (int i = 0; i < 5; i++) {
+        auto p = ht.find(i);
+        assert_true(p && p->second == i*10, "all keys must remain after resize");
     }
-    else {
-        cout << "Did not find hi9" << endl;
-    }
-    ht.insert({"hi7",17});
-    cout << "size: " << ht.size() << endl;
+}
+
+// Test 5: collision handling via bad hash
+struct BadHash {
+    size_t operator()(const string&) const { return 1; }
+};
+void testCollisionResolution() {
+    HashTable<string,int,LinearProber<string>,BadHash> ht(0.6, LinearProber<string>(), BadHash());
+    // All keys collide to bucket 1
+    ht.insert({"c1",1});
+    ht.insert({"c2",2});
+    ht.insert({"c3",3});
+    assert_true(ht.find("c1") && ht.find("c2") && ht.find("c3"), "collided keys should all be found");
+    // test update existing
+    ht.insert({"c2",22});
+    assert_true(ht.find("c2")->second == 22, "c2 must update to 22");
+}
+
+// Test 6: double hashing prober usage
+void testDoubleHashProber() {
+    DoubleHashProber<string,MyStringHash> dhp;
+    HashTable<string,int,DoubleHashProber<string,MyStringHash>> ht(0.6, dhp);
+    ht.insert({"alpha",1});
+    ht.insert({"beta",2});
+    ht.insert({"gamma",3});
+    assert_true(ht.find("alpha") && ht.find("beta") && ht.find("gamma"), "double hashing keys found");
+}
+
+int main() {
+    TEST_CASE("Basic insert/find") testBasicInsertFind(); END_TEST();
+    TEST_CASE("at() and operator[]") testAtAndOperatorBrackets(); END_TEST();
+    TEST_CASE("Remove behavior") testRemove(); END_TEST();
+    TEST_CASE("Resize and rehash") testResizeRehash(); END_TEST();
+    TEST_CASE("Collision resolution (linear)") testCollisionResolution(); END_TEST();
+    TEST_CASE("Double-hash probing") testDoubleHashProber(); END_TEST();
     return 0;
 }

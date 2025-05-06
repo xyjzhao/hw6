@@ -140,8 +140,24 @@ public:
     ItemType*       find(const KeyType& key);
     const ValueType& at(const KeyType& key) const;
     ValueType&       at(const KeyType& key);
-    const ValueType& operator[](const KeyType& key) const { return at(key); }
-    ValueType&       operator[](const KeyType& key)       { return at(key); }
+    // for const tables: exactly like at(), throws if missing
+    const ValueType& operator[](const KeyType& key) const {
+        return at(key);
+    }
+
+    // for non-const tables: insert default if missing, then return reference
+    ValueType& operator[](const KeyType& key) {
+        // try to find an existing, non-deleted item
+        HashItem* hi = internalFind(key);
+        if (!hi) {
+            // not found → insert default ValueType()
+            insert({key, ValueType()});
+            // now it must exist
+            hi = internalFind(key);
+        }
+        return hi->item.second;
+    }
+
 
     void reportAll(std::ostream& out) const;
     void clearTotalProbes() { totalProbes_ = 0; }
@@ -337,5 +353,6 @@ void HashTable<K,V,Prober,Hash,KEqual>::reportAll(std::ostream& out) const {
                 << table_[i]->item.second << "\n";
     }
 }
+
 
 #endif // HT_H
